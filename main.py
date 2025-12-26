@@ -13,8 +13,30 @@ from flask import Flask
 
 # Импорт модулей бота
 from config import TOKEN, BASE_FOLDER, DEBUG_MODE, IS_PRODUCTION
-from telegram_api import TelegramAPI
 from handlers import MessageHandler
+
+# Попытка импортировать правильный класс из telegram_api
+try:
+    from telegram_api import TelegramAPI
+    API_CLASS = TelegramAPI
+    logger_msg = "Импортирован TelegramAPI"
+except ImportError:
+    try:
+        from telegram_api import TelegramBot
+        API_CLASS = TelegramBot
+        logger_msg = "Импортирован TelegramBot"
+    except ImportError:
+        try:
+            from telegram_api import Bot
+            API_CLASS = Bot
+            logger_msg = "Импортирован Bot"
+        except ImportError:
+            try:
+                from telegram_api import TelegramClient
+                API_CLASS = TelegramClient
+                logger_msg = "Импортирован TelegramClient"
+            except ImportError as e:
+                raise ImportError(f"Не удалось импортировать класс из telegram_api: {e}")
 
 # Настройка логирования
 logging.basicConfig(
@@ -43,7 +65,8 @@ def stats():
             "base_folder": BASE_FOLDER,
             "debug_mode": DEBUG_MODE,
             "is_production": IS_PRODUCTION,
-            "files_loaded": handler.pdf_manager.get_files_count() if 'handler' in globals() else 0
+            "files_loaded": handler.pdf_manager.get_files_count() if 'handler' in globals() else 0,
+            "api_class": API_CLASS.__name__
         }
         return stats_data
     except Exception as e:
@@ -60,9 +83,10 @@ def run_telegram_bot():
     
     try:
         logger.info("Запуск Telegram бота...")
+        logger.info(f"📥 {logger_msg}")
         
-        # Инициализация API
-        api = TelegramAPI(TOKEN)
+        # Инициализация API с правильным классом
+        api = API_CLASS(TOKEN)
         
         # Инициализация обработчика сообщений
         handler = MessageHandler(api, BASE_FOLDER)
