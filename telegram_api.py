@@ -31,6 +31,21 @@ def get_file_path(filename, category=None):
     return os.path.join(BASE_FOLDER, filename)
 
 
+def get_me():
+    """Получить информацию о боте"""
+    try:
+        response = requests.get(f"{BASE_URL}/getMe", timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data["ok"]:
+                return data["result"]
+        return None
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"DEBUG: Ошибка get_me: {e}")
+        return None
+
+
 def send_message(chat_id, text, reply_markup=None):
     """Отправить текстовое сообщение"""
     try:
@@ -216,18 +231,13 @@ def edit_message_text(chat_id, message_id, text, reply_markup=None):
 def check_bot_connection():
     """Проверить подключение к боту"""
     try:
-        response = requests.get(f"{BASE_URL}/getMe", timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if data["ok"]:
-                bot_name = data["result"]["username"]
-                print(f"✅ Бот @{bot_name} подключен успешно")
-                return True
-            else:
-                print("❌ Неверный токен бота")
-                return False
+        bot_info = get_me()
+        if bot_info:
+            bot_name = bot_info["username"]
+            print(f"✅ Бот @{bot_name} подключен успешно")
+            return True
         else:
-            print("❌ Не удается подключиться к Telegram API")
+            print("❌ Неверный токен бота")
             return False
     except Exception as e:
         print(f"❌ Ошибка подключения: {e}")
