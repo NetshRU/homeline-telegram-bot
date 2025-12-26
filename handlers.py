@@ -8,8 +8,35 @@ import os
 from config import KNOWLEDGE_BASE, SPECIAL_FILES, SEARCH_KEYWORDS, DEBUG_MODE
 from telegram_api import (
     log_usage, get_file_path, send_message, send_document, 
-    create_inline_keyboard, edit_message_text
+    create_inline_keyboard, edit_message_text, answer_callback_query
 )
+
+
+class PDFManager:
+    """Управление PDF файлами"""
+    def __init__(self, base_folder):
+        self.base_folder = base_folder
+        self.files_count = 0
+        self._scan_files()
+    
+    def _scan_files(self):
+        """Подсчет количества PDF файлов"""
+        try:
+            total_files = 0
+            for category_info in KNOWLEDGE_BASE.values():
+                total_files += len(category_info["files"])
+            total_files += len(SPECIAL_FILES)  # Добавляем специальные файлы
+            self.files_count = total_files
+        except:
+            self.files_count = 11  # Fallback значение
+    
+    def get_files_count(self):
+        """Получить количество файлов"""
+        return self.files_count
+
+
+# Глобальный менеджер PDF для статистики
+pdf_manager = PDFManager("pdf_files")
 
 
 def handle_start(chat_id, user_name):
@@ -249,7 +276,7 @@ def handle_quick(chat_id):
     log_usage(chat_id, "quick")
     
     file_path = get_file_path(SPECIAL_FILES["quick"])
-    caption = "⚡ <b>Быстрый справочник</b>\n\n💾 Сохрани на телефон для быстрого доступа!"
+    caption = "⚡ <b>Быстрый справочник</b>"
     send_document(chat_id, file_path, SPECIAL_FILES["quick"], caption)
 
 
@@ -357,12 +384,12 @@ def handle_callback(chat_id, callback_data, message_id):
                     # Отправляем файл
                     if correct_category == "special":
                         file_path = get_file_path(found_filename)
-                        caption = f"📄 <b>{found_filename}</b>\n\n💾 Сохрани на телефон!"
+                        caption = f"📄 <b>{found_filename}</b>"
                         send_document(chat_id, file_path, found_filename, caption)
                     else:
                         description = KNOWLEDGE_BASE[correct_category]["files"].get(found_filename, found_filename)
                         file_path = get_file_path(found_filename, correct_category)
-                        caption = f"📄 <b>{description}</b>\n\n💾 Сохрани на телефон!"
+                        caption = f"📄 <b>{description}</b>"
                         send_document(chat_id, file_path, found_filename, caption)
                     return
                 else:
@@ -437,7 +464,7 @@ def handle_callback(chat_id, callback_data, message_id):
                             filename = filenames[file_index]
                             description = KNOWLEDGE_BASE[category]["files"][filename]
                             file_path = get_file_path(filename, category)
-                            caption = f"📄 <b>{description}</b>\n\n💾 Сохрани на телефон!"
+                            caption = f"📄 <b>{description}</b>"
                             send_document(chat_id, file_path, filename, caption)
                             return
                     except (ValueError, IndexError) as e:
@@ -474,7 +501,7 @@ def handle_callback(chat_id, callback_data, message_id):
                         if test_safe == safe_filename:
                             description = KNOWLEDGE_BASE[category]["files"][filename]
                             file_path = get_file_path(filename, category)
-                            caption = f"📄 <b>{description}</b>\n\n💾 Сохрани на телефон!"
+                            caption = f"📄 <b>{description}</b>"
                             send_document(chat_id, file_path, filename, caption)
                             return
                             
@@ -487,7 +514,7 @@ def handle_callback(chat_id, callback_data, message_id):
             if file_type in SPECIAL_FILES:
                 filename = SPECIAL_FILES[file_type]
                 file_path = get_file_path(filename)
-                caption = f"📄 <b>{file_type.upper()}</b>\n\n💾 Сохрани на телефон!"
+                caption = f"📄 <b>{file_type.upper()}</b>"
                 send_document(chat_id, file_path, filename, caption)
                 
         elif callback_data == "back":
@@ -496,9 +523,9 @@ def handle_callback(chat_id, callback_data, message_id):
                 print("DEBUG: Возврат в главное меню")
             
             buttons = [
-                [{"text": "1️⃣ КРИТИЧЕСКИЕ (3)", "callback_data": "cat_critical"}],
-                [{"text": "2️⃣ ПОДКЛЮЧЕНИЯ (4)", "callback_data": "cat_connections"}], 
-                [{"text": "3️⃣ ОБОРУДОВАНИЕ (4)", "callback_data": "cat_equipment"}],
+                [{"text": "1️⃣ КРИТИЧЕСКИЕ", "callback_data": "cat_critical"}],
+                [{"text": "2️⃣ ПОДКЛЮЧЕНИЯ", "callback_data": "cat_connections"}], 
+                [{"text": "3️⃣ ОБОРУДОВАНИЕ", "callback_data": "cat_equipment"}],
                 [{"text": "⚡ Быстрый справочник", "callback_data": "special_quick"}]
             ]
             
@@ -597,7 +624,6 @@ def process_callback(callback_query):
             print(f"DEBUG: Получен callback_query: {callback_data}")
         
         # Ответить на callback (убрать "часики")
-        from telegram_api import answer_callback_query
         callback_id = callback_query["id"]
         answer_callback_query(callback_id)
         
@@ -607,5 +633,4 @@ def process_callback(callback_query):
         if DEBUG_MODE:
             print(f"Ошибка callback: {e}")
             import traceback
-
             traceback.print_exc()
