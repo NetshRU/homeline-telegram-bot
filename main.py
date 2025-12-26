@@ -13,30 +13,8 @@ from flask import Flask
 
 # Импорт модулей бота
 from config import TOKEN, BASE_FOLDER, DEBUG_MODE, IS_PRODUCTION
-from handlers import MessageHandler
-
-# Попытка импортировать правильный класс из telegram_api
-try:
-    from telegram_api import TelegramAPI
-    API_CLASS = TelegramAPI
-    logger_msg = "Импортирован TelegramAPI"
-except ImportError:
-    try:
-        from telegram_api import TelegramBot
-        API_CLASS = TelegramBot
-        logger_msg = "Импортирован TelegramBot"
-    except ImportError:
-        try:
-            from telegram_api import Bot
-            API_CLASS = Bot
-            logger_msg = "Импортирован Bot"
-        except ImportError:
-            try:
-                from telegram_api import TelegramClient
-                API_CLASS = TelegramClient
-                logger_msg = "Импортирован TelegramClient"
-            except ImportError as e:
-                raise ImportError(f"Не удалось импортировать класс из telegram_api: {e}")
+from handlers import process_message, process_callback
+from telegram_api import get_updates, check_bot_connection, send_message
 
 # Настройка логирования
 logging.basicConfig(
@@ -64,9 +42,7 @@ def stats():
             "status": "running",
             "base_folder": BASE_FOLDER,
             "debug_mode": DEBUG_MODE,
-            "is_production": IS_PRODUCTION,
-            "files_loaded": handler.pdf_manager.get_files_count() if 'handler' in globals() else 0,
-            "api_class": API_CLASS.__name__
+            "is_production": IS_PRODUCTION
         }
         return stats_data
     except Exception as e:
@@ -79,42 +55,39 @@ def run_flask():
 
 def run_telegram_bot():
     """Запуск Telegram бота"""
-    global handler
-    
     try:
         logger.info("Запуск Telegram бота...")
-        logger.info(f"📥 {logger_msg}")
-        
-        # Инициализация API с правильным классом
-        api = API_CLASS(TOKEN)
-        
-        # Инициализация обработчика сообщений
-        handler = MessageHandler(api, BASE_FOLDER)
         
         # Проверка подключения к Telegram
-        bot_info = api.get_me()
-        if not bot_info:
-            raise Exception("Не удалось получить информацию о боте")
+        if not check_bot_connection():
+            raise Exception("Не удалось подключиться к Telegram API")
         
-        logger.info(f"✅ Бот запущен: @{bot_info.get('username', 'unknown')}")
         logger.info(f"📂 Базовая папка: {BASE_FOLDER}")
-        logger.info(f"🔍 Файлов загружено: {handler.pdf_manager.get_files_count()}")
         logger.info(f"🚀 Супер поиск активирован!")
         
         # Основной цикл получения обновлений
         offset = 0
-        timeout = 30
         
         logger.info("🔄 Начинаю получение сообщений...")
         
         while True:
             try:
-                updates = api.get_updates(offset=offset, timeout=timeout)
+                updates = get_updates(offset)
                 
                 if updates:
                     for update in updates:
-                        # Обработка обновления
-                        handler.handle_update(update)
+                        try:
+                            # Обработка обычного сообщения
+                            if "message" in update:
+                                process_message(update["message"])
+                            
+                            # Обработка callback от кнопок
+                            elif "callback_query" in update:
+                                process_callback(update["callback_query"])
+                                
+                        except Exception as e:
+                            logger.error(f"Ошибка обработки обновления: {e}")
+                            continue
                         
                         # Обновляем offset для следующего запроса
                         offset = max(offset, update.get('update_id', 0) + 1)
