@@ -224,9 +224,9 @@ def handle_all(chat_id):
     log_usage(chat_id, "all")
     
     buttons = [
-        [{"text": "1️⃣ КРИТИЧЕСКИЕ (3)", "callback_data": "cat_critical"}],
-        [{"text": "2️⃣ ПОДКЛЮЧЕНИЯ (4)", "callback_data": "cat_connections"}], 
-        [{"text": "3️⃣ ОБОРУДОВАНИЕ (4)", "callback_data": "cat_equipment"}],
+        [{"text": "1️⃣ КРИТИЧЕСКИЕ", "callback_data": "cat_critical"}],
+        [{"text": "2️⃣ ПОДКЛЮЧЕНИЯ", "callback_data": "cat_connections"}], 
+        [{"text": "3️⃣ ОБОРУДОВАНИЕ", "callback_data": "cat_equipment"}],
         [{"text": "⚡ Быстрый справочник", "callback_data": "special_quick"}]
     ]
     
@@ -607,4 +607,5 @@ def process_callback(callback_query):
         if DEBUG_MODE:
             print(f"Ошибка callback: {e}")
             import traceback
+
             traceback.print_exc()
