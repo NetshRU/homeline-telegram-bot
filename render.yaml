@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: homeline-telegram-bot
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: BASE_FOLDER
+        value: "pdf_files"
+      - key: DEBUG_MODE
+        value: "False"
