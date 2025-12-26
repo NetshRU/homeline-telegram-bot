@@ -1,120 +1,135 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Telegram Bot для базы знаний Homeline Токмак
-Модульная версия - исправлена проблема с отправкой ответов
 
-Запуск: python main.py
+"""
+Telegram бот базы знаний Homeline с веб-сервером для Render.com
 """
 
-import os
+import logging
 import time
-import signal
-import sys
+import os
+from threading import Thread
+from flask import Flask
 
-# Импортируем наши модули
-from config import BASE_FOLDER, DEBUG_MODE
-from telegram_api import get_updates, check_bot_connection
-from handlers import process_message, process_callback
+# Импорт модулей бота
+from config import TOKEN, BASE_FOLDER, DEBUG_MODE, IS_PRODUCTION
+from telegram_api import TelegramAPI
+from handlers import MessageHandler
 
+# Настройка логирования
+logging.basicConfig(
+    level=logging.DEBUG if DEBUG_MODE else logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-def signal_handler(sig, frame):
-    """Обработчик сигнала прерывания (Ctrl+C)"""
-    print("\n🛑 Получен сигнал остановки...")
-    print("👋 Бот остановлен!")
-    sys.exit(0)
+# Flask веб-сервер для health check
+app = Flask(__name__)
 
+@app.route('/')
+def home():
+    return "✅ Homeline Telegram Bot работает!"
 
-def check_requirements():
-    """Проверить все требования для запуска"""
-    print("🔍 Проверка требований...")
-    
-    # Проверить папку с файлами
-    if not os.path.exists(BASE_FOLDER):
-        print(f"❌ Папка '{BASE_FOLDER}' не найдена!")
-        print("🔧 Скачайте папку из Google Drive")
-        return False
-    print("✅ Папка с PDF файлами найдена")
-    
-    # Проверить библиотеку requests
+@app.route('/health')
+def health():
+    return {"status": "ok", "bot": "running"}
+
+@app.route('/stats')
+def stats():
     try:
-        import requests
-        print("✅ Библиотека requests доступна")
-    except ImportError:
-        print("❌ Установите: pip install requests")
-        return False
-    
-    # Проверить подключение к боту
-    if not check_bot_connection():
-        return False
-    
-    return True
+        # Получаем статистику от бота
+        stats_data = {
+            "status": "running",
+            "base_folder": BASE_FOLDER,
+            "debug_mode": DEBUG_MODE,
+            "is_production": IS_PRODUCTION,
+            "files_loaded": handler.pdf_manager.get_files_count() if 'handler' in globals() else 0
+        }
+        return stats_data
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
+def run_flask():
+    """Запуск Flask сервера в отдельном потоке"""
+    port = int(os.environ.get('PORT', 10000))  # Render использует переменную PORT
+    app.run(host='0.0.0.0', port=port, debug=False)
 
-def main_loop():
-    """Основной цикл бота"""
-    update_offset = 0
+def run_telegram_bot():
+    """Запуск Telegram бота"""
+    global handler
     
-    print("🤖 Бот запущен! Используется requests polling")
-    print("📱 Найдите бота в Telegram и отправьте /start")
-    print("🛑 Нажмите Ctrl+C для остановки")
-    
-    if DEBUG_MODE:
-        print("🔍 Режим отладки включен - все действия будут логироваться")
-    
-    while True:
-        try:
-            updates = get_updates(update_offset)
-            
-            for update in updates:
-                update_offset = update["update_id"] + 1
+    try:
+        logger.info("Запуск Telegram бота...")
+        
+        # Инициализация API
+        api = TelegramAPI(TOKEN)
+        
+        # Инициализация обработчика сообщений
+        handler = MessageHandler(api, BASE_FOLDER)
+        
+        # Проверка подключения к Telegram
+        bot_info = api.get_me()
+        if not bot_info:
+            raise Exception("Не удалось получить информацию о боте")
+        
+        logger.info(f"✅ Бот запущен: @{bot_info.get('username', 'unknown')}")
+        logger.info(f"📂 Базовая папка: {BASE_FOLDER}")
+        logger.info(f"🔍 Файлов загружено: {handler.pdf_manager.get_files_count()}")
+        logger.info(f"🚀 Супер поиск активирован!")
+        
+        # Основной цикл получения обновлений
+        offset = 0
+        timeout = 30
+        
+        logger.info("🔄 Начинаю получение сообщений...")
+        
+        while True:
+            try:
+                updates = api.get_updates(offset=offset, timeout=timeout)
                 
-                if "message" in update:
-                    if DEBUG_MODE:
-                        user_text = update["message"].get("text", "")
-                        user_id = update["message"]["from"].get("id", "unknown")
-                        print(f"DEBUG: Получено сообщение от {user_id}: '{user_text}'")
-                    process_message(update["message"])
-                    
-                elif "callback_query" in update:
-                    if DEBUG_MODE:
-                        callback_data = update["callback_query"].get("data", "")
-                        user_id = update["callback_query"]["from"].get("id", "unknown")
-                        print(f"DEBUG: Получен callback от {user_id}: '{callback_data}'")
-                    process_callback(update["callback_query"])
-                    
-        except KeyboardInterrupt:
-            print("\n🛑 Остановка бота...")
-            break
-        except Exception as e:
-            if DEBUG_MODE:
-                print(f"DEBUG: Ошибка в основном цикле: {e}")
-                import traceback
-                traceback.print_exc()
-            time.sleep(5)  # Пауза при ошибке
-
+                if updates:
+                    for update in updates:
+                        # Обработка обновления
+                        handler.handle_update(update)
+                        
+                        # Обновляем offset для следующего запроса
+                        offset = max(offset, update.get('update_id', 0) + 1)
+                
+                # Небольшая пауза между запросами
+                time.sleep(0.1)
+                
+            except KeyboardInterrupt:
+                logger.info("Получен сигнал остановки...")
+                break
+                
+            except Exception as e:
+                logger.error(f"Ошибка в главном цикле: {e}")
+                # При ошибке ждем 5 секунд и продолжаем
+                time.sleep(5)
+    
+    except Exception as e:
+        logger.error(f"Критическая ошибка: {e}")
+        raise
 
 def main():
-    """Запуск бота"""
-    # Установить обработчик сигналов
-    signal.signal(signal.SIGINT, signal_handler)
+    """Главная функция - запуск веб-сервера и Telegram бота"""
+    logger.info("🚀 Запуск Homeline Telegram Bot...")
     
     try:
-        # Проверки перед запуском
-        if not check_requirements():
-            return
+        # Запуск Flask сервера в отдельном потоке
+        flask_thread = Thread(target=run_flask, daemon=True)
+        flask_thread.start()
+        logger.info(f"🌐 Веб-сервер запущен на порту {os.environ.get('PORT', 10000)}")
         
-        # Запуск основного цикла
-        main_loop()
+        # Даем время серверу запуститься
+        time.sleep(2)
+        
+        # Запуск Telegram бота в главном потоке
+        run_telegram_bot()
         
     except Exception as e:
-        print(f"❌ Критическая ошибка: {e}")
-        if DEBUG_MODE:
-            import traceback
-            traceback.print_exc()
-    finally:
-        print("👋 До свидания!")
+        logger.error(f"💥 Критическая ошибка при запуске: {e}")
+        raise
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
